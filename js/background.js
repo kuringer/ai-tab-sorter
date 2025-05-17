@@ -4,18 +4,51 @@
 chrome.runtime.onInstalled.addListener(() => {
   console.log("AI Tab Sorter extension installed/updated.");
   // Initialize default settings if they don't exist
-  chrome.storage.sync.get(['apiKey', 'userPrompt', 'userGroups', 'sortingMode'], (result) => {
-    if (result.apiKey === undefined) {
+  chrome.storage.sync.get(['apiKey', 'userPrompt', 'userGroups', 'sortingMode'], (syncResult) => {
+    if (syncResult.apiKey === undefined) {
       chrome.storage.sync.set({ apiKey: '' });
     }
-    if (result.userPrompt === undefined) {
+    if (syncResult.userPrompt === undefined) {
       chrome.storage.sync.set({ userPrompt: 'Organize these browser tabs into logical groups based on their content and purpose.' });
     }
-    if (result.userGroups === undefined) {
+    if (syncResult.userGroups === undefined) {
       chrome.storage.sync.set({ userGroups: [] });
     }
-    if (result.sortingMode === undefined) {
+    if (syncResult.sortingMode === undefined) {
       chrome.storage.sync.set({ sortingMode: 'respect' }); // 'respect' or 'autonomous'
+    }
+  });
+  // Initialize tabCreationTimes in local storage
+  chrome.storage.local.get(['tabCreationTimes'], (localResult) => {
+    if (localResult.tabCreationTimes === undefined) {
+      chrome.storage.local.set({ tabCreationTimes: {} });
+      console.log("Initialized tabCreationTimes in local storage.");
+    }
+  });
+});
+
+// Listener for when a new tab is created
+chrome.tabs.onCreated.addListener((tab) => {
+  if (tab.id !== undefined) {
+    chrome.storage.local.get(['tabCreationTimes'], (result) => {
+      const tabCreationTimes = result.tabCreationTimes || {};
+      tabCreationTimes[tab.id] = Date.now();
+      chrome.storage.local.set({ tabCreationTimes }, () => {
+        console.log(`Tab ${tab.id} created at ${new Date(tabCreationTimes[tab.id]).toISOString()}`);
+      });
+    });
+  }
+});
+
+// Listener for when a tab is removed
+chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
+  chrome.storage.local.get(['tabCreationTimes'], (result) => {
+    const tabCreationTimes = result.tabCreationTimes || {};
+    if (tabCreationTimes[tabId] !== undefined) {
+      delete tabCreationTimes[tabId];
+      chrome.storage.local.set({ tabCreationTimes }, () => {
+        console.log(`Removed creation time for tab ${tabId}.`);
+      });
     }
   });
 });
@@ -81,8 +114,23 @@ async function performTabSorting() {
   console.log("Settings:", settings);
 
   // 3. Prepare data for OpenAI API
+  const tabCreationTimes = await new Promise((resolve) => {
+    chrome.storage.local.get(['tabCreationTimes'], (result) => resolve(result.tabCreationTimes || {}));
+  });
+
+  const tabsWithCreationTime = tabs.map(tab => {
+    const createdAt = tabCreationTimes[tab.id];
+    return {
+      title: tab.title,
+      url: tab.url,
+      id: tab.id,
+      // Add a human-readable creation time if available
+      ...(createdAt && { openedAt: new Date(createdAt).toISOString() })
+    };
+  });
+
   const promptData = {
-    tabs: tabs.map(tab => ({ title: tab.title, url: tab.url, id: tab.id })),
+    tabs: tabsWithCreationTime,
     userDefinedGroups: settings.userGroups, // [{name: "Work", description: "Tabs related to work projects"}, ...]
     userPrompt: settings.userPrompt,
     sortingMode: settings.sortingMode
@@ -90,11 +138,15 @@ async function performTabSorting() {
 
   // Construct the main prompt for OpenAI
   let mainPrompt = `${settings.userPrompt}\n\n`;
-  mainPrompt += `Here are the currently open tabs. Each tab is listed with its unique ID, title, and URL:\n`;
+  mainPrompt += `Here are the currently open tabs. Each tab is listed with its unique ID, title, URL, and optionally when it was opened (openedAt in ISO format):\n`;
   promptData.tabs.forEach(tab => {
-    mainPrompt += `Tab ID: ${tab.id}, Title: "${tab.title}", URL: ${tab.url}\n`;
+    let tabInfo = `Tab ID: ${tab.id}, Title: "${tab.title}", URL: ${tab.url}`;
+    if (tab.openedAt) {
+      tabInfo += `, Opened At: ${tab.openedAt}`;
+    }
+    mainPrompt += tabInfo + `\n`;
   });
-  mainPrompt += `\n`;
+  mainPrompt += `\nConsider the 'Opened At' timestamp to potentially group tabs by session or recency if it seems relevant to the user's prompt or the tab content.\n`;
 
   if (settings.sortingMode === 'respect' && settings.userGroups && settings.userGroups.length > 0) {
     mainPrompt += `Please try to assign tabs to the following user-defined groups based on their descriptions. For tabs that don't fit, create new logical groups.\n`;
