@@ -78,9 +78,9 @@ async function performTabSorting() {
 
   // Construct the main prompt for OpenAI
   let mainPrompt = `${settings.userPrompt}\n\n`;
-  mainPrompt += `Here are the currently open tabs:\n`;
-  promptData.tabs.forEach((tab, index) => {
-    mainPrompt += `${index + 1}. Title: "${tab.title}", URL: ${tab.url}\n`;
+  mainPrompt += `Here are the currently open tabs. Each tab is listed with its unique ID, title, and URL:\n`;
+  promptData.tabs.forEach(tab => {
+    mainPrompt += `Tab ID: ${tab.id}, Title: "${tab.title}", URL: ${tab.url}\n`;
   });
   mainPrompt += `\n`;
 
@@ -95,14 +95,14 @@ async function performTabSorting() {
      mainPrompt += `Please create logical groups for these tabs. If user-defined groups were provided and the mode is 'respect', prioritize them.\n`;
   }
 
-  mainPrompt += `\nYour response should be a JSON object. The top-level keys should be the group names. Each group name should map to an array of tab IDs (integers) that belong to that group. For example:
+  mainPrompt += `\nYour response should be a JSON object. The top-level keys should be the group names. Each group name should map to an array of the actual tab IDs (integers, e.g., 123, 456) that belong to that group. Use the Tab IDs provided above. For example:
 {
-  "Research": [101, 102, 105],
-  "Social Media": [103],
-  "News": [104, 106]
+  "Research Projects": [1723, 1724, 1728],
+  "Social Media Updates": [1725],
+  "News Articles": [1726, 1729]
 }
 Ensure all provided tab IDs are assigned to a group. If a tab doesn't fit well into any other group, create a new group for it or place it in a general 'Miscellaneous' group.
-Only include tab IDs that were provided in the input.
+Only include the actual tab IDs that were provided in the input list of tabs. Do not use sequential numbers like 1, 2, 3 unless those are the actual tab IDs.
 `;
 
   console.log("Constructed Prompt for OpenAI:", mainPrompt);
