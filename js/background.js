@@ -1,9 +1,38 @@
 // AI Tab Sorter - Background Script
+let tabCreationTimesCache = {};
+
+// Function to load and initialize the cache, and ensure all current tabs are covered
+async function initializeAndLoadTabCreationTimes() {
+  const localData = await chrome.storage.local.get(['tabCreationTimes']);
+  tabCreationTimesCache = localData.tabCreationTimes || {};
+  console.log("Initialized tabCreationTimesCache from storage:", JSON.parse(JSON.stringify(tabCreationTimesCache)));
+
+  const currentTabs = await chrome.tabs.query({});
+  let cacheWasUpdated = false;
+  currentTabs.forEach(tab => {
+    if (tab.id !== undefined && tab.url && (tab.url.startsWith('http://') || tab.url.startsWith('https://'))) {
+      if (tabCreationTimesCache[tab.id] === undefined) {
+        tabCreationTimesCache[tab.id] = Date.now();
+        console.log(`Tab ${tab.id} (${tab.title || 'No Title'}) found without timestamp during init. Cached time: ${new Date(tabCreationTimesCache[tab.id]).toISOString()}`);
+        cacheWasUpdated = true;
+      }
+    }
+  });
+
+  if (cacheWasUpdated) {
+    await chrome.storage.local.set({ tabCreationTimes: tabCreationTimesCache });
+    console.log("Updated tabCreationTimes in storage during initialization due to new entries in cache.");
+  }
+}
+
+// Call initialization immediately when the script loads
+initializeAndLoadTabCreationTimes().catch(err => console.error("Error during tabCreationTimesCache initialization:", err));
 
 // Listener for when the extension is installed or updated
-chrome.runtime.onInstalled.addListener(() => {
-  console.log("AI Tab Sorter extension installed/updated.");
-  // Initialize default settings if they don't exist
+chrome.runtime.onInstalled.addListener(async (details) => {
+  console.log("AI Tab Sorter extension installed/updated. Reason:", details.reason);
+
+  // Initialize default sync settings if they don't exist
   chrome.storage.sync.get(['apiKey', 'userPrompt', 'userGroups', 'sortingMode'], (syncResult) => {
     if (syncResult.apiKey === undefined) {
       chrome.storage.sync.set({ apiKey: '' });
@@ -18,39 +47,36 @@ chrome.runtime.onInstalled.addListener(() => {
       chrome.storage.sync.set({ sortingMode: 'respect' }); // 'respect' or 'autonomous'
     }
   });
-  // Initialize tabCreationTimes in local storage
-  chrome.storage.local.get(['tabCreationTimes'], (localResult) => {
-    if (localResult.tabCreationTimes === undefined) {
-      chrome.storage.local.set({ tabCreationTimes: {} });
-      console.log("Initialized tabCreationTimes in local storage.");
-    }
-  });
+  // tabCreationTimesCache and its persistence are handled by the global initializeAndLoadTabCreationTimes function
 });
 
 // Listener for when a new tab is created
 chrome.tabs.onCreated.addListener((tab) => {
   if (tab.id !== undefined) {
-    chrome.storage.local.get(['tabCreationTimes'], (result) => {
-      const tabCreationTimes = result.tabCreationTimes || {};
-      tabCreationTimes[tab.id] = Date.now();
-      chrome.storage.local.set({ tabCreationTimes }, () => {
-        console.log(`Tab ${tab.id} created at ${new Date(tabCreationTimes[tab.id]).toISOString()}`);
-      });
+    const creationTime = Date.now();
+    tabCreationTimesCache[tab.id] = creationTime;
+    console.log(`Tab ${tab.id} created. Cached at ${new Date(creationTime).toISOString()}`);
+    // Asynchronously save the updated cache to local storage for persistence
+    chrome.storage.local.set({ tabCreationTimes: tabCreationTimesCache }, () => {
+      if (chrome.runtime.lastError) {
+        console.error("Error saving tabCreationTimes to storage after tab creation:", chrome.runtime.lastError.message);
+      }
     });
   }
 });
 
 // Listener for when a tab is removed
 chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
-  chrome.storage.local.get(['tabCreationTimes'], (result) => {
-    const tabCreationTimes = result.tabCreationTimes || {};
-    if (tabCreationTimes[tabId] !== undefined) {
-      delete tabCreationTimes[tabId];
-      chrome.storage.local.set({ tabCreationTimes }, () => {
-        console.log(`Removed creation time for tab ${tabId}.`);
-      });
-    }
-  });
+  if (tabCreationTimesCache[tabId] !== undefined) {
+    delete tabCreationTimesCache[tabId];
+    console.log(`Removed creation time for tab ${tabId} from cache.`);
+    // Asynchronously save the updated cache to local storage
+    chrome.storage.local.set({ tabCreationTimes: tabCreationTimesCache }, () => {
+      if (chrome.runtime.lastError) {
+        console.error("Error saving tabCreationTimes to storage after tab removal:", chrome.runtime.lastError.message);
+      }
+    });
+  }
 });
 
 // Listener for messages from popup or options page
@@ -114,12 +140,11 @@ async function performTabSorting() {
   console.log("Settings:", settings);
 
   // 3. Prepare data for OpenAI API
-  const tabCreationTimes = await new Promise((resolve) => {
-    chrome.storage.local.get(['tabCreationTimes'], (result) => resolve(result.tabCreationTimes || {}));
-  });
+  // Use a snapshot of the in-memory cache directly
+  const currentTabCreationTimesFromCache = { ...tabCreationTimesCache };
 
   const tabsWithCreationTime = tabs.map(tab => {
-    const createdAt = tabCreationTimes[tab.id];
+    const createdAt = currentTabCreationTimesFromCache[tab.id];
     return {
       title: tab.title,
       url: tab.url,
