@@ -1,32 +1,46 @@
 // AI Tab Sorter - Background Script
 let tabCreationTimesCache = {};
+let tabOpenerInfoCache = {}; // Cache for openerTabId
 
-// Function to load and initialize the cache, and ensure all current tabs are covered
-async function initializeAndLoadTabCreationTimes() {
-  const localData = await chrome.storage.local.get(['tabCreationTimes']);
+// Function to load and initialize caches, and ensure all current tabs are covered
+async function initializeAndLoadTabInfoCaches() {
+  const localData = await chrome.storage.local.get(['tabCreationTimes', 'tabOpenerInfo']);
   tabCreationTimesCache = localData.tabCreationTimes || {};
+  tabOpenerInfoCache = localData.tabOpenerInfo || {};
   console.log("Initialized tabCreationTimesCache from storage:", JSON.parse(JSON.stringify(tabCreationTimesCache)));
+  console.log("Initialized tabOpenerInfoCache from storage:", JSON.parse(JSON.stringify(tabOpenerInfoCache)));
 
   const currentTabs = await chrome.tabs.query({});
-  let cacheWasUpdated = false;
+  let creationCacheUpdated = false;
+  let openerCacheUpdated = false;
+
   currentTabs.forEach(tab => {
     if (tab.id !== undefined && tab.url && (tab.url.startsWith('http://') || tab.url.startsWith('https://'))) {
       if (tabCreationTimesCache[tab.id] === undefined) {
         tabCreationTimesCache[tab.id] = Date.now();
         console.log(`Tab ${tab.id} (${tab.title || 'No Title'}) found without timestamp during init. Cached time: ${new Date(tabCreationTimesCache[tab.id]).toISOString()}`);
-        cacheWasUpdated = true;
+        creationCacheUpdated = true;
       }
+      // Opener info is typically only available at creation, so we don't retroactively add it here
+      // unless we have a way to reliably get it for existing tabs (which chrome.tabs.Tab doesn't always provide post-creation for all scenarios)
     }
   });
 
-  if (cacheWasUpdated) {
-    await chrome.storage.local.set({ tabCreationTimes: tabCreationTimesCache });
-    console.log("Updated tabCreationTimes in storage during initialization due to new entries in cache.");
+  const dataToSet = {};
+  if (creationCacheUpdated) {
+    dataToSet.tabCreationTimes = tabCreationTimesCache;
+    console.log("Updated tabCreationTimes in storage during initialization.");
+  }
+  // No direct update for openerCache here as we primarily populate it on tab creation.
+  // If we were to clean up stale entries, this would be a place.
+
+  if (Object.keys(dataToSet).length > 0) {
+    await chrome.storage.local.set(dataToSet);
   }
 }
 
 // Call initialization immediately when the script loads
-initializeAndLoadTabCreationTimes().catch(err => console.error("Error during tabCreationTimesCache initialization:", err));
+initializeAndLoadTabInfoCaches().catch(err => console.error("Error during tab info caches initialization:", err));
 
 // Listener for when the extension is installed or updated
 chrome.runtime.onInstalled.addListener(async (details) => {
@@ -47,7 +61,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
       chrome.storage.sync.set({ sortingMode: 'respect' }); // 'respect' or 'autonomous'
     }
   });
-  // tabCreationTimesCache and its persistence are handled by the global initializeAndLoadTabCreationTimes function
+  // tabCreationTimesCache and tabOpenerInfoCache persistence are handled by initializeAndLoadTabInfoCaches and event listeners
 });
 
 // Listener for when a new tab is created
@@ -56,10 +70,19 @@ chrome.tabs.onCreated.addListener((tab) => {
     const creationTime = Date.now();
     tabCreationTimesCache[tab.id] = creationTime;
     console.log(`Tab ${tab.id} created. Cached at ${new Date(creationTime).toISOString()}`);
-    // Asynchronously save the updated cache to local storage for persistence
-    chrome.storage.local.set({ tabCreationTimes: tabCreationTimesCache }, () => {
+
+    const dataToSet = { tabCreationTimes: tabCreationTimesCache };
+
+    if (tab.openerTabId) {
+      tabOpenerInfoCache[tab.id] = tab.openerTabId;
+      console.log(`Tab ${tab.id} was opened by tab ${tab.openerTabId}. Cached opener info.`);
+      dataToSet.tabOpenerInfo = tabOpenerInfoCache;
+    }
+
+    // Asynchronously save the updated caches to local storage for persistence
+    chrome.storage.local.set(dataToSet, () => {
       if (chrome.runtime.lastError) {
-        console.error("Error saving tabCreationTimes to storage after tab creation:", chrome.runtime.lastError.message);
+        console.error("Error saving tab info to storage after tab creation:", chrome.runtime.lastError.message);
       }
     });
   }
@@ -67,13 +90,28 @@ chrome.tabs.onCreated.addListener((tab) => {
 
 // Listener for when a tab is removed
 chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
+  let cachesUpdated = false;
+  const dataToSet = {};
+
   if (tabCreationTimesCache[tabId] !== undefined) {
     delete tabCreationTimesCache[tabId];
+    dataToSet.tabCreationTimes = tabCreationTimesCache;
     console.log(`Removed creation time for tab ${tabId} from cache.`);
-    // Asynchronously save the updated cache to local storage
-    chrome.storage.local.set({ tabCreationTimes: tabCreationTimesCache }, () => {
+    cachesUpdated = true;
+  }
+
+  if (tabOpenerInfoCache[tabId] !== undefined) {
+    delete tabOpenerInfoCache[tabId];
+    dataToSet.tabOpenerInfo = tabOpenerInfoCache;
+    console.log(`Removed opener info for tab ${tabId} from cache.`);
+    cachesUpdated = true;
+  }
+
+  if (cachesUpdated) {
+    // Asynchronously save the updated caches to local storage
+    chrome.storage.local.set(dataToSet, () => {
       if (chrome.runtime.lastError) {
-        console.error("Error saving tabCreationTimes to storage after tab removal:", chrome.runtime.lastError.message);
+        console.error("Error saving tab info to storage after tab removal:", chrome.runtime.lastError.message);
       }
     });
   }
@@ -140,22 +178,29 @@ async function performTabSorting() {
   console.log("Settings:", settings);
 
   // 3. Prepare data for OpenAI API
-  // Use a snapshot of the in-memory cache directly
+  // Use a snapshot of the in-memory caches directly
   const currentTabCreationTimesFromCache = { ...tabCreationTimesCache };
+  const currentTabOpenerInfoFromCache = { ...tabOpenerInfoCache };
 
-  const tabsWithCreationTime = tabs.map(tab => {
+  const tabsWithInfo = tabs.map(tab => {
     const createdAt = currentTabCreationTimesFromCache[tab.id];
-    return {
+    const openerId = currentTabOpenerInfoFromCache[tab.id];
+    const tabData = {
       title: tab.title,
       url: tab.url,
       id: tab.id,
-      // Add a human-readable creation time if available
-      ...(createdAt && { openedAt: new Date(createdAt).toISOString() })
     };
+    if (createdAt) {
+      tabData.openedAt = new Date(createdAt).toISOString();
+    }
+    if (openerId) {
+      tabData.openedByTabId = openerId;
+    }
+    return tabData;
   });
 
   const promptData = {
-    tabs: tabsWithCreationTime,
+    tabs: tabsWithInfo,
     userDefinedGroups: settings.userGroups, // [{name: "Work", description: "Tabs related to work projects"}, ...]
     userPrompt: settings.userPrompt,
     sortingMode: settings.sortingMode
@@ -163,15 +208,19 @@ async function performTabSorting() {
 
   // Construct the main prompt for OpenAI
   let mainPrompt = `${settings.userPrompt}\n\n`;
-  mainPrompt += `Here are the currently open tabs. Each tab is listed with its unique ID, title, URL, and optionally when it was opened (openedAt in ISO format):\n`;
+  mainPrompt += `Here are the currently open tabs. Each tab is listed with its unique ID, title, URL, optionally when it was opened (openedAt in ISO format), and optionally the ID of the tab that opened it (openedByTabId):\n`;
   promptData.tabs.forEach(tab => {
     let tabInfo = `Tab ID: ${tab.id}, Title: "${tab.title}", URL: ${tab.url}`;
     if (tab.openedAt) {
       tabInfo += `, Opened At: ${tab.openedAt}`;
     }
+    if (tab.openedByTabId) {
+      tabInfo += `, Opened By Tab ID: ${tab.openedByTabId}`;
+    }
     mainPrompt += tabInfo + `\n`;
   });
-  mainPrompt += `\nConsider the 'Opened At' timestamp to potentially group tabs by session or recency if it seems relevant to the user's prompt or the tab content.\n`;
+  mainPrompt += `\nConsider the 'Opened At' timestamp to potentially group tabs by session or recency.`;
+  mainPrompt += ` Also, consider the 'Opened By Tab ID' to identify related tabs; tabs opened by the same tab or forming a chain of openings might belong together.\n`;
 
   if (settings.sortingMode === 'respect' && settings.userGroups && settings.userGroups.length > 0) {
     mainPrompt += `Please try to assign tabs to the following user-defined groups based on their descriptions. For tabs that don't fit, create new logical groups.\n`;
