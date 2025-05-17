@@ -35,6 +35,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .then(result => sendResponse({ success: true, message: "Tabs sorted successfully!", data: result }))
       .catch(error => sendResponse({ success: false, message: error.message }));
     return true; // Indicates that the response will be sent asynchronously
+  } else if (request.action === "groupTabsByDomain") {
+    console.log("Received groupTabsByDomain request", request.data);
+    performDomainGrouping()
+      .then(result => sendResponse({ success: true, message: "Tabs grouped by domain!", data: result }))
+      .catch(error => sendResponse({ success: false, message: error.message }));
+    return true; // Indicates that the response will be sent asynchronously
   }
   // Add other message handlers if needed
 });
@@ -191,3 +197,43 @@ async function applyTabGrouping(groupedTabs) {
 // chrome.tabs.getCurrent(tab => {
 //   console.log("Current tab (within background script context, if any):", tab);
 // });
+
+async function performDomainGrouping() {
+  console.log("Starting tab grouping by domain...");
+
+  const tabs = await new Promise((resolve) => {
+    chrome.tabs.query({ pinned: false, url: ["http://*/*", "https://*/*"] }, (tabs) => {
+      resolve(tabs.filter(tab => !tab.url.startsWith('chrome-extension://')));
+    });
+  });
+
+  if (tabs.length === 0) {
+    console.log("No tabs to group by domain.");
+    return { message: "No tabs to group." };
+  }
+
+  const tabsByDomain = {};
+  for (const tab of tabs) {
+    try {
+      const url = new URL(tab.url);
+      const domain = url.hostname.startsWith('www.') ? url.hostname.substring(4) : url.hostname;
+      if (!tabsByDomain[domain]) {
+        tabsByDomain[domain] = [];
+      }
+      tabsByDomain[domain].push(tab.id);
+    } catch (e) {
+      console.warn(`Could not parse URL or get hostname for tab ID ${tab.id} (${tab.url}):`, e);
+      // Optionally, group unparsable URLs under a special group name
+      const unknownDomain = "Uncategorized (URL error)";
+      if (!tabsByDomain[unknownDomain]) {
+        tabsByDomain[unknownDomain] = [];
+      }
+      tabsByDomain[unknownDomain].push(tab.id);
+    }
+  }
+
+  console.log("Tabs grouped by domain (before applying):", tabsByDomain);
+  await applyTabGrouping(tabsByDomain); // Reusing the existing applyTabGrouping function
+
+  return { message: "Tabs have been grouped by domain." };
+}

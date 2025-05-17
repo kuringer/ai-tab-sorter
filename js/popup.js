@@ -1,39 +1,45 @@
 // AI Tab Sorter - Popup Script
 
 document.addEventListener('DOMContentLoaded', () => {
-  const sortTabsButton = document.getElementById('sortTabsButton');
+  const aiSortButton = document.getElementById('aiSortButton');
+  const domainSortButton = document.getElementById('domainSortButton');
   const statusMessage = document.getElementById('statusMessage');
 
-  if (sortTabsButton) {
-    sortTabsButton.addEventListener('click', () => {
-      statusMessage.textContent = 'Sorting tabs, please wait...';
-      sortTabsButton.disabled = true;
+  function handleSortAction(button, action, loadingMessage) {
+    if (!button) {
+      console.error(`${loadingMessage.split(' ')[0]} button not found.`);
+      if (statusMessage) statusMessage.textContent = "Error: UI element missing.";
+      return;
+    }
 
-      // Send a message to the background script to initiate sorting
-      chrome.runtime.sendMessage({ action: "sortTabs", data: {} }, (response) => {
+    button.addEventListener('click', () => {
+      statusMessage.textContent = loadingMessage;
+      aiSortButton.disabled = true;
+      domainSortButton.disabled = true;
+
+      chrome.runtime.sendMessage({ action: action, data: {} }, (response) => {
         if (chrome.runtime.lastError) {
-          // Handle errors like "Receiving end does not exist" if background script is not ready
           statusMessage.textContent = `Error: ${chrome.runtime.lastError.message}`;
           console.error("Error sending message to background script:", chrome.runtime.lastError);
         } else if (response && response.success) {
-          statusMessage.textContent = response.message || 'Tabs sorted successfully!';
-          console.log("Sorting response from background:", response);
-          // Optionally, close the popup after a short delay
-          // setTimeout(() => window.close(), 2000);
+          statusMessage.textContent = response.message || 'Action completed successfully!';
+          console.log("Response from background:", response);
+          // setTimeout(() => window.close(), 2000); // Optionally close popup
         } else if (response) {
-          statusMessage.textContent = `Error: ${response.message || 'Failed to sort tabs.'}`;
-          console.error("Sorting failed:", response);
+          statusMessage.textContent = `Error: ${response.message || 'Failed to complete action.'}`;
+          console.error("Action failed:", response);
         } else {
           statusMessage.textContent = 'Error: No response from background script.';
           console.error("No response from background script.");
         }
-        sortTabsButton.disabled = false;
+        aiSortButton.disabled = false;
+        domainSortButton.disabled = false;
       });
     });
-  } else {
-    console.error("Sort Tabs button not found in popup.html");
-    if(statusMessage) statusMessage.textContent = "Error: UI element missing.";
   }
+
+  handleSortAction(aiSortButton, "sortTabs", "Sorting with AI, please wait...");
+  handleSortAction(domainSortButton, "groupTabsByDomain", "Grouping by domain, please wait...");
 
   // You can add more UI interactions here if needed,
   // for example, a link to the options page:
