@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>AI Tab Sorter Options</title>
+  <link rel="stylesheet" type="text/css" href="css/options.css">
+</head>
+<body>
+  <h1>AI Tab Sorter - Settings</h1>
+
+  <div>
+    <h2>OpenAI API Key</h2>
+    <input type="password" id="apiKeyInput" placeholder="Enter your OpenAI API Key">
+    <button id="saveApiKeyButton">Save Key</button>
+    <p id="apiKeyStatus"></p>
+  </div>
+
+  <div>
+    <h2>Custom User Prompt</h2>
+    <textarea id="userPromptInput" rows="4" placeholder="e.g., Group tabs by project and urgency."></textarea>
+    <button id="saveUserPromptButton">Save Prompt</button>
+    <p id="userPromptStatus"></p>
+  </div>
+
+  <div>
+    <h2>User Defined Groups</h2>
+    <div id="userGroupsContainer">
+      <!-- User groups will be dynamically added here -->
+    </div>
+    <input type="text" id="newGroupName" placeholder="Group Name">
+    <textarea id="newGroupDescription" placeholder="Group Description (how AI should categorize tabs for this group)"></textarea>
+    <button id="addUserGroupButton">Add Group</button>
+  </div>
+
+  <div>
+    <h2>Sorting Mode</h2>
+    <label>
+      <input type="radio" name="sortingMode" value="respect" checked>
+      Respect user-defined groups (AI creates new groups for unassigned tabs)
+    </label>
+    <br>
+    <label>
+      <input type="radio" name="sortingMode" value="autonomous">
+      Autonomous AI sorting (AI creates all groups)
+    </label>
+    <button id="saveSortingModeButton">Save Mode</button>
+    <p id="sortingModeStatus"></p>
+  </div>
+
+  <script src="js/options.js"></script>
+</body>
+</html>

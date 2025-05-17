@@ -1,0 +1,105 @@
+body {
+  font-family: sans-serif;
+  padding: 20px;
+  max-width: 600px;
+  margin: 20px auto;
+  background-color: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+}
+
+h1 {
+  text-align: center;
+  color: #333;
+  margin-bottom: 30px;
+}
+
+h2 {
+  color: #555;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 5px;
+  margin-top: 30px;
+  margin-bottom: 15px;
+}
+
+div {
+  margin-bottom: 25px;
+  padding: 15px;
+  background-color: #fff;
+  border: 1px solid #eee;
+  border-radius: 4px;
+}
+
+input[type="text"],
+input[type="password"],
+textarea {
+  width: calc(100% - 22px); /* Account for padding and border */
+  padding: 10px;
+  margin-bottom: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+button {
+  padding: 10px 15px;
+  font-size: 1em;
+  cursor: pointer;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  margin-right: 5px;
+}
+
+button:hover {
+  background-color: #0056b3;
+}
+
+p[id$="Status"] { /* Selects p tags with id ending in "Status" */
+  font-size: 0.9em;
+  color: green;
+  min-height: 18px; /* Prevent layout shift */
+  margin-top: 5px;
+}
+
+#userGroupsContainer ul {
+  list-style-type: none;
+  padding: 0;
+}
+
+#userGroupsContainer li {
+  padding: 8px;
+  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+#userGroupsContainer li:last-child {
+  border-bottom: none;
+}
+
+#userGroupsContainer .deleteGroupButton {
+  background-color: #dc3545;
+  font-size: 0.8em;
+  padding: 5px 10px;
+}
+#userGroupsContainer .deleteGroupButton:hover {
+  background-color: #c82333;
+}
+
+label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: normal;
+}
+
+input[type="radio"] {
+  margin-right: 5px;
+}

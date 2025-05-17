@@ -1,0 +1,44 @@
+body {
+  font-family: sans-serif;
+  width: 250px;
+  padding: 10px;
+  text-align: center;
+}
+
+h1 {
+  font-size: 1.2em;
+  margin-bottom: 15px;
+}
+
+button {
+  padding: 10px 15px;
+  font-size: 1em;
+  cursor: pointer;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  margin-bottom: 10px;
+}
+
+button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+#statusMessage {
+  margin-top: 10px;
+  font-size: 0.9em;
+  min-height: 20px; /* To prevent layout shift */
+}
+
+a {
+  display: block;
+  margin-top: 15px;
+  color: #007bff;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
