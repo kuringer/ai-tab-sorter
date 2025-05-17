@@ -32,7 +32,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // 5. Process response and group tabs
     // This will be implemented in later steps
     performTabSorting()
-      .then(result => sendResponse({ success: true, message: "Tabs sorted (simulated).", data: result }))
+      .then(result => sendResponse({ success: true, message: "Tabs sorted successfully!", data: result }))
       .catch(error => sendResponse({ success: false, message: error.message }));
     return true; // Indicates that the response will be sent asynchronously
   }
@@ -109,39 +109,38 @@ Only include tab IDs that were provided in the input.
 
   // 4. Call OpenAI API (Simulated for now)
   // In a real scenario, you would use fetch to call the OpenAI API
-  // const apiKey = settings.apiKey;
-  // const response = await fetch('https://api.openai.com/v1/chat/completions', {
-  //   method: 'POST',
-  //   headers: {
-  //     'Content-Type': 'application/json',
-  //     'Authorization': `Bearer ${apiKey}`
-  //   },
-  //   body: JSON.stringify({
-  //     model: 'gpt-4o', // Or the model chosen by the user
-  //     messages: [{ role: 'user', content: mainPrompt }],
-  //     response_format: { type: "json_object" }
-  //   })
-  // });
-
-  // if (!response.ok) {
-  //   const errorData = await response.json();
-  //   console.error("OpenAI API error:", errorData);
-  //   throw new Error(`OpenAI API error: ${errorData.error?.message || response.statusText}`);
-  // }
-
-  // const result = await response.json();
-  // const assistantResponse = result.choices[0]?.message?.content;
-
-  // Simulated response for now:
-  const simulatedAssistantResponse = JSON.stringify({
-    "Project Alpha": promptData.tabs.length > 0 ? [promptData.tabs[0].id] : [],
-    "General Browsing": promptData.tabs.length > 1 ? promptData.tabs.slice(1).map(t => t.id) : []
+  const apiKey = settings.apiKey;
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o', // Or the model chosen by the user
+      messages: [{ role: 'user', content: mainPrompt }],
+      response_format: { type: "json_object" }
+    })
   });
-  console.log("Simulated OpenAI Response:", simulatedAssistantResponse);
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: { message: "Unknown error and failed to parse error response." } }));
+    console.error("OpenAI API error:", errorData);
+    throw new Error(`OpenAI API error: ${errorData.error?.message || response.statusText}`);
+  }
+
+  const result = await response.json();
+  const assistantResponse = result.choices[0]?.message?.content;
+
+  if (!assistantResponse) {
+    console.error("No content in OpenAI response:", result);
+    throw new Error("OpenAI returned an empty response.");
+  }
+  console.log("Actual OpenAI Response:", assistantResponse);
 
   let groupedTabs;
   try {
-    groupedTabs = JSON.parse(simulatedAssistantResponse);
+    groupedTabs = JSON.parse(assistantResponse);
   } catch (e) {
     console.error("Failed to parse AI response:", e);
     throw new Error("AI returned an invalid response format.");
@@ -151,7 +150,7 @@ Only include tab IDs that were provided in the input.
   console.log("Parsed grouped tabs:", groupedTabs);
   await applyTabGrouping(groupedTabs);
 
-  return { message: "Tabs have been sorted and grouped (simulated)." };
+  return { message: "Tabs have been sorted and grouped." };
 }
 
 async function applyTabGrouping(groupedTabs) {
