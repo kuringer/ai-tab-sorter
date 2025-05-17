@@ -22,6 +22,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const saveSortingModeButton = document.getElementById('saveSortingModeButton');
   const sortingModeStatus = document.getElementById('sortingModeStatus');
 
+  // YOLO Mode Elements
+  const yoloModeCheckbox = document.getElementById('yoloModeCheckbox');
+  const saveYoloModeButton = document.getElementById('saveYoloModeButton');
+  const yoloModeStatus = document.getElementById('yoloModeStatus');
+
   // Load saved settings when the page loads
   loadSettings();
 
@@ -125,10 +130,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // --- YOLO Mode ---
+  if (saveYoloModeButton) {
+    saveYoloModeButton.addEventListener('click', () => {
+      const yoloModeEnabled = yoloModeCheckbox.checked;
+      chrome.storage.sync.set({ yoloMode: yoloModeEnabled }, () => {
+        yoloModeStatus.textContent = 'YOLO Mode setting saved!';
+        setTimeout(() => yoloModeStatus.textContent = '', 2000);
+        console.log('YOLO Mode setting saved:', yoloModeEnabled);
+      });
+    });
+  }
+
 
   // --- Load All Settings ---
   function loadSettings() {
-    chrome.storage.sync.get(['apiKey', 'userPrompt', 'userGroups', 'sortingMode'], (data) => {
+    chrome.storage.sync.get(['apiKey', 'userPrompt', 'userGroups', 'sortingMode', 'yoloMode'], (data) => {
       if (data.apiKey) {
         apiKeyInput.value = data.apiKey;
       }
@@ -142,6 +159,9 @@ document.addEventListener('DOMContentLoaded', () => {
             radio.checked = true;
           }
         });
+      }
+      if (data.yoloMode !== undefined) { // Check for undefined to handle first load
+        yoloModeCheckbox.checked = data.yoloMode;
       }
       console.log('Settings loaded:', data);
     });
