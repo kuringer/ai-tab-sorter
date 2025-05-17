@@ -3,11 +3,12 @@
 document.addEventListener('DOMContentLoaded', () => {
   const aiSortButton = document.getElementById('aiSortButton');
   const domainSortButton = document.getElementById('domainSortButton');
+  const ungroupAllButton = document.getElementById('ungroupAllButton');
   const statusMessage = document.getElementById('statusMessage');
 
   function handleSortAction(button, action, loadingMessage) {
     if (!button) {
-      console.error(`${loadingMessage.split(' ')[0]} button not found.`);
+      console.error(`Button for action "${action}" not found.`);
       if (statusMessage) statusMessage.textContent = "Error: UI element missing.";
       return;
     }
@@ -16,6 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
       statusMessage.textContent = loadingMessage;
       aiSortButton.disabled = true;
       domainSortButton.disabled = true;
+      if (ungroupAllButton) ungroupAllButton.disabled = true;
 
       chrome.runtime.sendMessage({ action: action, data: {} }, (response) => {
         if (chrome.runtime.lastError) {
@@ -34,12 +36,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         aiSortButton.disabled = false;
         domainSortButton.disabled = false;
+        if (ungroupAllButton) ungroupAllButton.disabled = false;
       });
     });
   }
 
   handleSortAction(aiSortButton, "sortTabs", "Sorting with AI, please wait...");
   handleSortAction(domainSortButton, "groupTabsByDomain", "Grouping by domain, please wait...");
+  handleSortAction(ungroupAllButton, "ungroupAllTabs", "Ungrouping all tabs, please wait...");
 
   // You can add more UI interactions here if needed,
   // for example, a link to the options page:

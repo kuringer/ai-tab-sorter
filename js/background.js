@@ -41,6 +41,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .then(result => sendResponse({ success: true, message: "Tabs grouped by domain!", data: result }))
       .catch(error => sendResponse({ success: false, message: error.message }));
     return true; // Indicates that the response will be sent asynchronously
+  } else if (request.action === "ungroupAllTabs") {
+    console.log("Received ungroupAllTabs request", request.data);
+    performUngroupAll()
+      .then(result => sendResponse({ success: true, message: "All tabs ungrouped!", data: result }))
+      .catch(error => sendResponse({ success: false, message: error.message }));
+    return true; // Indicates that the response will be sent asynchronously
   }
   // Add other message handlers if needed
 });
@@ -236,4 +242,37 @@ async function performDomainGrouping() {
   await applyTabGrouping(tabsByDomain); // Reusing the existing applyTabGrouping function
 
   return { message: "Tabs have been grouped by domain." };
+}
+
+async function performUngroupAll() {
+  console.log("Starting ungrouping all tabs...");
+
+  const tabs = await new Promise((resolve) => {
+    // Query for all tabs, regardless of whether they are in a group or not,
+    // as chrome.tabs.ungroup() takes an array of tab IDs.
+    chrome.tabs.query({}, resolve);
+  });
+
+  if (tabs.length === 0) {
+    console.log("No tabs to ungroup.");
+    return { message: "No tabs found to ungroup." };
+  }
+
+  const groupedTabIds = tabs
+    .filter(tab => tab.groupId !== chrome.tabGroups.TAB_GROUP_ID_NONE && tab.groupId !== undefined)
+    .map(tab => tab.id);
+
+  if (groupedTabIds.length === 0) {
+    console.log("No grouped tabs found to ungroup.");
+    return { message: "No currently grouped tabs found." };
+  }
+
+  try {
+    await chrome.tabs.ungroup(groupedTabIds);
+    console.log(`Successfully ungrouped ${groupedTabIds.length} tabs:`, groupedTabIds);
+    return { message: `Successfully ungrouped ${groupedTabIds.length} tabs.` };
+  } catch (error) {
+    console.error("Error ungrouping tabs:", error);
+    throw new Error(`Failed to ungroup tabs: ${error.message}`);
+  }
 }
