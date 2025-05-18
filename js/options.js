@@ -27,6 +27,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const saveYoloModeButton = document.getElementById('saveYoloModeButton');
   const yoloModeStatus = document.getElementById('yoloModeStatus');
 
+  // YOLO User Prompt Elements
+  const yoloUserPromptInput = document.getElementById('yoloUserPromptInput');
+  const saveYoloUserPromptButton = document.getElementById('saveYoloUserPromptButton');
+  const yoloUserPromptStatus = document.getElementById('yoloUserPromptStatus');
+
   // Load saved settings when the page loads
   loadSettings();
 
@@ -142,10 +147,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // --- YOLO User Prompt ---
+  if (saveYoloUserPromptButton) {
+    saveYoloUserPromptButton.addEventListener('click', () => {
+      const yoloUserPrompt = yoloUserPromptInput.value.trim();
+      chrome.storage.sync.set({ yoloUserPrompt: yoloUserPrompt }, () => {
+        yoloUserPromptStatus.textContent = 'YOLO User Prompt saved!';
+        setTimeout(() => yoloUserPromptStatus.textContent = '', 2000);
+        console.log('YOLO User Prompt saved.');
+      });
+    });
+  }
+
 
   // --- Load All Settings ---
   function loadSettings() {
-    chrome.storage.sync.get(['apiKey', 'userPrompt', 'userGroups', 'sortingMode', 'yoloMode'], (data) => {
+    chrome.storage.sync.get(['apiKey', 'userPrompt', 'userGroups', 'sortingMode', 'yoloMode', 'yoloUserPrompt'], (data) => {
       if (data.apiKey) {
         apiKeyInput.value = data.apiKey;
       }
@@ -162,6 +179,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (data.yoloMode !== undefined) { // Check for undefined to handle first load
         yoloModeCheckbox.checked = data.yoloMode;
+      }
+      if (data.yoloUserPrompt) {
+        yoloUserPromptInput.value = data.yoloUserPrompt;
       }
       console.log('Settings loaded:', data);
     });

@@ -47,7 +47,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   console.log("AI Tab Sorter extension installed/updated. Reason:", details.reason);
 
   // Initialize default sync settings if they don't exist
-  chrome.storage.sync.get(['apiKey', 'userPrompt', 'userGroups', 'sortingMode', 'yoloMode'], (syncResult) => {
+  chrome.storage.sync.get(['apiKey', 'userPrompt', 'userGroups', 'sortingMode', 'yoloMode', 'yoloUserPrompt'], (syncResult) => {
     if (syncResult.apiKey === undefined) {
       chrome.storage.sync.set({ apiKey: '' });
     }
@@ -62,6 +62,9 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     }
     if (syncResult.yoloMode === undefined) {
       chrome.storage.sync.set({ yoloMode: false }); // Default YOLO mode to off
+    }
+    if (syncResult.yoloUserPrompt === undefined) {
+      chrome.storage.sync.set({ yoloUserPrompt: 'Suggest a concise group name for this new tab based on its content and relation to other tabs or existing groups. If it fits an existing group, use that name.' }); // Default YOLO prompt
     }
   });
   // tabCreationTimesCache and tabOpenerInfoCache persistence are handled by initializeAndLoadTabInfoCaches and event listeners
@@ -91,7 +94,7 @@ chrome.tabs.onCreated.addListener(async (tab) => {
   });
 
   // YOLO Mode: Auto-group new tab
-  const settings = await new Promise(resolve => chrome.storage.sync.get(['yoloMode', 'apiKey'], resolve));
+  const settings = await new Promise(resolve => chrome.storage.sync.get(['yoloMode', 'apiKey', 'yoloUserPrompt'], resolve));
   
   console.log(`onCreated: Tab ID ${tab.id}, URL: ${tab.url}, Pending URL: ${tab.pendingUrl}, Title: "${tab.title || 'No Title'}"`);
   console.log(`onCreated: Settings check - yoloMode: ${settings.yoloMode}, apiKeySet: ${!!settings.apiKey}`);
@@ -110,7 +113,7 @@ chrome.tabs.onCreated.addListener(async (tab) => {
     try {
       // Pass the tab object that has the confirmed URL
       const tabForYolo = { ...tab, url: targetUrl };
-      await handleYoloTabGrouping(tabForYolo, settings.apiKey);
+      await handleYoloTabGrouping(tabForYolo, settings.apiKey, settings.yoloUserPrompt);
     } catch (error) {
       console.error(`YOLO Mode: Error auto-grouping tab ${tab.id}:`, error.message, error.stack);
     }
@@ -156,6 +159,48 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
         console.error("Error saving tab info to storage after tab removal:", chrome.runtime.lastError.message);
       }
     });
+  }
+});
+
+// Listener for when a tab is updated, to catch URL changes for YOLO mode
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  // Only proceed if the URL has actually changed in this update event,
+  // and the tab object itself along with its ID and URL are valid.
+  if (!changeInfo.url || !tab || !tab.id || !tab.url) {
+    return;
+  }
+
+  const settings = await new Promise(resolve => chrome.storage.sync.get(['yoloMode', 'apiKey', 'yoloUserPrompt'], resolve));
+
+  // Check if the new URL is a valid HTTP/HTTPS URL
+  const isHttpUrl = tab.url.startsWith('http://') || tab.url.startsWith('https://');
+  // Check if the tab is currently ungrouped
+  const isUngrouped = tab.groupId === chrome.tabGroups.TAB_GROUP_ID_NONE || tab.groupId === undefined;
+
+  // console.log(`onUpdated: Tab ID ${tab.id}, URL changed to: ${tab.url}, Status: ${tab.status}, changeInfo:`, JSON.parse(JSON.stringify(changeInfo)));
+  // console.log(`onUpdated: Settings check - yoloMode: ${settings.yoloMode}, apiKeySet: ${!!settings.apiKey}, isHttpUrl: ${isHttpUrl}, isUngrouped: ${isUngrouped} (groupId: ${tab.groupId})`);
+
+  if (settings.yoloMode && settings.apiKey && isHttpUrl && isUngrouped) {
+    console.log(`YOLO Mode (onUpdated): Tab ${tab.id} ('${tab.title || 'No Title'}') URL changed from a previous state to ${tab.url}. Conditions met for auto-grouping.`);
+    try {
+      // Pass the full tab object as it contains the latest info (URL, title, etc.)
+      // The handleYoloTabGrouping function already contains checks for valid URL and other conditions.
+      await handleYoloTabGrouping(tab, settings.apiKey, settings.yoloUserPrompt);
+    } catch (error) {
+      console.error(`YOLO Mode (onUpdated): Error auto-grouping tab ${tab.id}:`, error.message, error.stack);
+    }
+  } else {
+    // Log why it was skipped only if Yolo mode is generally active but other conditions failed
+    if (settings.yoloMode && settings.apiKey && changeInfo.url) { // ensure URL change was the trigger
+        let reason = [];
+        if (!isHttpUrl) reason.push(`New URL "${tab.url}" not http/https`);
+        if (!isUngrouped) reason.push(`Tab already in group ${tab.groupId}`);
+        // No need to check for yoloMode/apiKey again as they are in the outer if
+        
+        if (reason.length > 0) {
+            console.log(`YOLO Mode (onUpdated): Skipped for tab ${tab.id} (URL: ${tab.url}). Reasons: ${reason.join('; ')}.`);
+        }
+    }
   }
 });
 
@@ -445,7 +490,7 @@ async function performUngroupAll() {
   }
 }
 
-async function handleYoloTabGrouping(newTab, apiKey) {
+async function handleYoloTabGrouping(newTab, apiKey, yoloUserPrompt) {
   console.log(`YOLO: Processing tab ${newTab.id} - ${newTab.url}`);
 
   // Ensure newTab.url is valid before proceeding
@@ -507,13 +552,13 @@ async function handleYoloTabGrouping(newTab, apiKey) {
   };
 
   // 2. Construct the prompt for OpenAI
-  let yoloPrompt = `A new browser tab has just been opened. Your task is to suggest a suitable group name for this new tab.
-Consider its content (title, URL), how it might relate to other currently open tabs, and whether it fits into an *existing group*.
+  let yoloSystemMessage = yoloUserPrompt || 'Suggest a concise group name for this new tab based on its content and relation to other tabs or existing groups. If it fits an existing group, use that name.'; // Fallback if yoloUserPrompt is somehow empty
 
-The new tab is:
-- ID: ${newTabInfo.id}
-- Title: "${newTabInfo.title}"
-- URL: ${newTabInfo.url}`;
+  let yoloPrompt = `${yoloSystemMessage}\n\n`;
+  yoloPrompt += `The new tab is:`;
+  yoloPrompt += `\n- ID: ${newTabInfo.id}`;
+  yoloPrompt += `\n- Title: "${newTabInfo.title}"`;
+  yoloPrompt += `\n- URL: ${newTabInfo.url}`;
   if (newTabInfo.openedByTabId) {
     yoloPrompt += `\n- This tab was opened by Tab ID: ${newTabInfo.openedByTabId}`;
   }
